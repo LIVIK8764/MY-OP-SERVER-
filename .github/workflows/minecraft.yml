@@ -59,7 +59,7 @@ jobs:
       
       - name: Start Minecraft Server
         run: |
-          java -Xms1G -Xmx2G -jar server.jar nogui > server-console.log 2>&1 &
+          java -Xms6G -Xmx6G -jar server.jar nogui > server-console.log 2>&1 &
           echo $! > minecraft.pid
 
           echo "Waiting for Minecraft to start..."
