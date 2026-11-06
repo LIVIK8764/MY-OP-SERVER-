@@ -40,24 +40,25 @@ jobs:
       - name: Accept EULA
         run: echo "eula=true" > eula.txt
 
-        
-      - name: Install Plugins
+      - name: Install ViaVersion and ViaBackwards
         run: |
           mkdir -p plugins
 
           echo "Downloading ViaVersion..."
           curl -fL \
-            https://hangar.papermc.io/api/v1/projects/ViaVersion/versions/latest/PAPER/download \
+            https://github.com/ViaVersion/ViaVersion/releases/latest/download/ViaVersion.jar \
             -o plugins/ViaVersion.jar
 
           echo "Downloading ViaBackwards..."
           curl -fL \
-            https://hangar.papermc.io/api/v1/projects/ViaBackwards/versions/latest/PAPER/download \
+            https://github.com/ViaVersion/ViaBackwards/releases/latest/download/ViaBackwards.jar \
             -o plugins/ViaBackwards.jar
 
-          echo "Both Via plugins downloaded!"
+          echo "Both plugins downloaded successfully!"
+          ls -lh plugins/
 
-
+        
+      
       - name: Start Minecraft Server
         run: |
           java -Xms1G -Xmx2G -jar server.jar nogui > server-console.log 2>&1 &
