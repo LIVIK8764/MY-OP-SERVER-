@@ -1,5 +1,5 @@
 
-name: Minecraft Java Server with Playit
+name: Minecraft Paper Server with Playit
 
 on:
   workflow_dispatch:
@@ -16,24 +16,33 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Download Minecraft Server
+      - name: Download Paper Server
         run: |
-          VERSION=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.latest.release')
+          VERSION="26.3"
+          USER_AGENT="Minecraft-GitHub-Server/1.0 (https://github.com)"
 
-          URL=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
-            | jq -r --arg VERSION "$VERSION" '.versions[] | select(.id == $VERSION) | .url')
+          RESPONSE=$(curl -fsSL \
+            -H "User-Agent: $USER_AGENT" \
+            "https://fill.papermc.io/v3/projects/paper/versions/$VERSION/builds?channel=STABLE&limit=1")
 
-          SERVER_URL=$(curl -fsSL "$URL" | jq -r '.downloads.server.url')
+          URL=$(echo "$RESPONSE" | jq -r \
+            'first(.[] | select(.channel == "STABLE") | .downloads["server:default"].url) // "null"')
 
-          echo "Downloading Minecraft $VERSION"
-          curl -fL "$SERVER_URL" -o server.jar
+          if [ "$URL" = "null" ] || [ -z "$URL" ]; then
+            echo "Paper download failed!"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          curl -fL "$URL" -o server.jar
+          echo "Paper downloaded successfully!"
 
       - name: Accept EULA
         run: echo "eula=true" > eula.txt
 
       - name: Start Minecraft Server
         run: |
-          java -Xms6G -Xmx6G -jar server.jar nogui > server-console.log 2>&1 &
+          java -Xms1G -Xmx2G -jar server.jar nogui > server-console.log 2>&1 &
           echo $! > minecraft.pid
 
           echo "Waiting for Minecraft to start..."
@@ -78,8 +87,9 @@ jobs:
 
       - name: Keep Server Online
         run: |
-          echo "Minecraft and Playit are running."
+          echo "Minecraft Paper and Playit are running."
           echo "Check your Playit dashboard for your public address."
+
           timeout 20m tail -F logs/latest.log playit-agent.log || STATUS=$?
 
           if [ "${STATUS:-0}" -ne 124 ]; then
