@@ -1,5 +1,5 @@
 
-name: Minecraft Java Server Test
+name: Minecraft Java Server with Playit
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
 jobs:
   minecraft-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
 
     steps:
       - name: Install Java 25
@@ -20,35 +20,77 @@ jobs:
         run: |
           VERSION=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.latest.release')
 
-          echo "Minecraft version: $VERSION"
-
           URL=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
             | jq -r --arg VERSION "$VERSION" '.versions[] | select(.id == $VERSION) | .url')
 
           SERVER_URL=$(curl -fsSL "$URL" | jq -r '.downloads.server.url')
 
+          echo "Downloading Minecraft $VERSION"
           curl -fL "$SERVER_URL" -o server.jar
 
-      - name: Accept Minecraft EULA
+      - name: Accept EULA
         run: echo "eula=true" > eula.txt
 
       - name: Start Minecraft Server
         run: |
-          echo "Starting Minecraft server..."
-          timeout 180s java -Xms1G -Xmx2G -jar server.jar nogui || STATUS=$?
+          java -Xms6G -Xmx6G -jar server.jar nogui > server-console.log 2>&1 &
+          echo $! > minecraft.pid
 
-          if [ "${STATUS:-0}" -eq 124 ]; then
-            echo "Test completed: server was stopped after 180 seconds."
-          elif [ "${STATUS:-0}" -ne 0 ]; then
-            echo "Server exited with status ${STATUS}"
-            exit "$STATUS"
+          echo "Waiting for Minecraft to start..."
+
+          for i in {1..120}; do
+            if grep -q "Done (" logs/latest.log 2>/dev/null; then
+              echo "Minecraft server started successfully!"
+              break
+            fi
+
+            if ! kill -0 "$(cat minecraft.pid)" 2>/dev/null; then
+              cat server-console.log
+              exit 1
+            fi
+
+            if [ "$i" -eq 120 ]; then
+              echo "Minecraft startup timed out."
+              cat server-console.log
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+      - name: Start Playit Agent
+        env:
+          PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
+        run: |
+          if [ -z "$PLAYIT_SECRET" ]; then
+            echo "PLAYIT_SECRET is missing!"
+            exit 1
+          fi
+
+          docker run --rm --network host \
+            -e SECRET_KEY="$PLAYIT_SECRET" \
+            ghcr.io/playit-cloud/playit-agent:latest \
+            > playit-agent.log 2>&1 &
+
+          echo "Playit agent started."
+          sleep 15
+          cat playit-agent.log
+
+      - name: Keep Server Online
+        run: |
+          echo "Minecraft and Playit are running."
+          echo "Check your Playit dashboard for your public address."
+          timeout 20m tail -F logs/latest.log playit-agent.log || STATUS=$?
+
+          if [ "${STATUS:-0}" -ne 124 ]; then
+            exit "${STATUS:-0}"
           fi
 
       - name: Show Server Logs
         if: always()
         run: |
-          if [ -f logs/latest.log ]; then
-            tail -n 60 logs/latest.log
-          else
-            echo "No Minecraft log was generated."
-          fi
+          echo "===== Minecraft Logs ====="
+          tail -n 60 logs/latest.log 2>/dev/null || true
+
+          echo "===== Playit Logs ====="
+          tail -n 60 playit-agent.log 2>/dev/null || true
